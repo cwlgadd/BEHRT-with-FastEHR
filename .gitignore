@@ -45,3 +45,7 @@ Thumbs.db
 
 # Custom project-specific ignores
 .idea/
+*.out
+*.parquet
+*.pkl
+*.ckpt

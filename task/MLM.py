@@ -18,6 +18,7 @@ import time
 import torch.nn as nn
 import os
 
+
 DATA_LEN = 10
 
 class BertConfig(Bert.modeling.BertConfig):
@@ -58,21 +59,34 @@ def make_example_data():
             "patid": "P001",
             "caliber_id":  ["CLS", "I10", "E11", "SEP", "E78", "SEP"],
             "age":   [50,    50,    50,    50,     51,    51],
+            "target_event": "I10",
+			"target_time": 0.1,
 	    },
 	    {
             "patid": "P002",
             "caliber_id":  ["CLS", "J45", "SEP", "I10", "E11", "SEP"],
             "age":   [60,    60,    60,    61,    61,    61],
+            "target_event": "J45",
+			"target_time": 0.2,
 	    },
         {
             "patid": "P003",
             "caliber_id": ["CLS", "J45", "SEP", "I10", "SEP"],
             "age": [60, 60, 60, 61, 61],
+			"target_event": "E78",
+            "target_time": 1.1,
+        },
+        {
+            "patid": "P004",
+            "caliber_id": ["CLS", "E23", "SEP", "I101", "SEP"],
+            "age": [20, 20, 20, 21, 21],
+			"target_event": "I10",
+            "target_time": 2.7,
         }
 	])
 	
-	df.to_pickle("test_data/example_data.pkl")
-	df.to_parquet("test_data/example_data.parquet", index=False)
+	df.to_pickle("task/example_data/example_data.pkl")
+	df.to_parquet("task/example_data/example_data.parquet", index=False)
 	
 	token2idx = {
 	    'PAD': 0,
@@ -89,7 +103,7 @@ def make_example_data():
 	# Wrap in a dict with 'token2idx' key
 	bert_vocab = {'token2idx': token2idx}
 		
-	with open("test_data/token2idx.pkl", "wb") as f:
+	with open("task/example_data/token2idx.pkl", "wb") as f:
 	    pkl.dump(bert_vocab, f)
 
 
@@ -137,7 +151,7 @@ def train(e, loader):
             optim.step()
             optim.zero_grad()
 
-    print("** ** * Saving fine - tuned model ** ** * ")
+    print("** ** * Saving fine - tuned MLM model ** ** * ")
     model_to_save = model.module if hasattr(model, 'module') else model  # Only save the model it-self
     create_folder(file_config['model_path'])
     output_model_file = os.path.join(file_config['model_path'], file_config['model_name'])
@@ -151,19 +165,19 @@ def train(e, loader):
 if __name__ == "__main__":
      
 	# Local example data	
-	# make_example_data()
-    # train_data = 'example_data/example_data.parquet'
-	# train_vocab = 'example_data/token2idx.pkl'
+	make_example_data()
+	train_data = 'task/example_data/example_data.parquet'
+	train_vocab = 'task/example_data/token2idx'
      
 	# FastEHR example data
-	train_data = '/home/ubuntu/Documents/GitHub/SurvivEHR/FastEHR/examples/data/_built/adapted/BEHRT/pretrain/dataset.parquet'
-	train_vocab = '/home/ubuntu/Documents/GitHub/SurvivEHR/FastEHR/examples/data/_built/adapted/BEHRT/pretrain/token2idx'
+	# train_data = '/home/ubuntu/Documents/GitHub/SurvivEHR/FastEHR/examples/data/_built/adapted/BEHRT/pretrain/dataset.parquet'
+	# train_vocab = '/home/ubuntu/Documents/GitHub/SurvivEHR/FastEHR/examples/data/_built/adapted/BEHRT/pretrain/token2idx'
 
 	file_config = {
         'data': train_data,
 		'vocab': train_vocab,
 	    'model_path': 'task/example_data', # where to save model
-	    'model_name': 'MLM_model', # model name
+	    'model_name': 'MLM.ckpt', # model name
 	    'file_name': 'MLM_log.out',  # log path
 	}
 	create_folder(file_config['model_path'])
@@ -196,7 +210,9 @@ if __name__ == "__main__":
 	ageVocab, _ = age_vocab(max_age=global_params['max_age'], mon=global_params['month'], symbol=global_params['age_symbol'])
 	# print(ageVocab)
 	
+	# ---------- Load Data ----------
 	data = pd.read_parquet(file_config['data'])
+     
 	# remove patients with visits less than min visit
 	data['length'] = data['caliber_id'].apply(lambda x: len([i for i in range(len(x)) if x[i] == 'SEP']))
 	data = data[data['length'] >= global_params['min_visit']]
@@ -204,6 +220,7 @@ if __name__ == "__main__":
 	
 	print(data)
 
+	# make dataset and dataloader
 	Dset = MLMLoader(data, BertVocab['token2idx'], ageVocab, max_len=train_params['max_len_seq'], code='caliber_id')
 	trainload = DataLoader(dataset=Dset, batch_size=train_params['batch_size'], shuffle=True, num_workers=3)
 	
@@ -241,5 +258,10 @@ if __name__ == "__main__":
 		f.write('{}\t{}\t{}\n'.format(e, loss, time_cost))
 	f.close() 
 
-	print("** ** * Training complete ! ** ** * ")
-	
+	print("** ** * Pre-Training complete ! ** ** * ")
+     
+	# Load the best model
+	print("** ** * Loading the trained model ** ** * ")
+	model = torch.load(os.path.join(file_config['model_path'], file_config['model_name']), map_location=train_params['device'])
+	print("** ** * Model loaded ! ** ** * ")
+	print(model)

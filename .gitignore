@@ -49,3 +49,7 @@ Thumbs.db
 *.parquet
 *.pkl
 *.ckpt
+my-virtual-env-icelake/
+low_
+__pycache__/
+
